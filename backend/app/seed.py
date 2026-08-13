@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 import app.models  # noqa: F401 - registers models on Base metadata before create_all
 from app.core.config import get_settings
 from app.core.security import hash_password
-from app.db.database import Base, SessionLocal, engine
+from app.db.database import Base, SessionLocal, engine, run_light_migrations
 from app.models.attendance import Attendance, AttendanceMethod, AttendanceStatus
 from app.models.person import Person
 from app.models.settings import SystemSettings
@@ -32,9 +32,12 @@ DEMO_PEOPLE = [
     ("Sneha Joshi", "EMP010", "HR"),
 ]
 
+DEMO_PORTAL_PASSWORD = "Demo@123"
+
 
 def seed() -> None:
     Base.metadata.create_all(bind=engine)
+    run_light_migrations()
     db = SessionLocal()
     try:
         if not db.query(User).filter(User.email == settings.ADMIN_EMAIL).first():
@@ -58,12 +61,27 @@ def seed() -> None:
             if ext_id in existing_ids:
                 people.append(db.query(Person).filter(Person.external_id == ext_id).first())
                 continue
-            person = Person(full_name=name, external_id=ext_id, department=dept)
+            email = f"{ext_id.lower()}@portal.attendance.io"
+            person = Person(full_name=name, external_id=ext_id, department=dept, email=email)
             db.add(person)
             people.append(person)
         db.commit()
         for p in people:
             db.refresh(p)
+
+        portal_enabled_count = 0
+        for p in people:
+            if p.portal_enabled:
+                continue
+            if not p.email:
+                p.email = f"{p.external_id.lower()}@portal.attendance.io"
+            p.hashed_password = hash_password(DEMO_PORTAL_PASSWORD)
+            p.portal_enabled = True
+            portal_enabled_count += 1
+        if portal_enabled_count:
+            db.commit()
+            print(f"Enabled self-service portal login for {portal_enabled_count} demo people")
+            print(f"  e.g. {people[0].email} / {DEMO_PORTAL_PASSWORD}")
 
         if db.query(Attendance).count() == 0:
             random.seed(42)

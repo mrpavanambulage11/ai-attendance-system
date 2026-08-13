@@ -17,6 +17,8 @@ class Person(Base):
     photo_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_enrolled: Mapped[bool] = mapped_column(Boolean, default=False)
+    hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    portal_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     embeddings: Mapped[list["FaceEmbedding"]] = relationship(

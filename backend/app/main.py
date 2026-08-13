@@ -5,14 +5,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 import app.models  # noqa: F401 - registers models on Base metadata before create_all
-from app.api import attendance, auth, dashboard, people, recognition
+from app.api import attendance, auth, dashboard, me, people, recognition
 from app.core.config import get_settings
-from app.db.database import Base, engine
+from app.db.database import Base, engine, run_light_migrations
 
 settings = get_settings()
 
 os.makedirs(settings.STORAGE_DIR, exist_ok=True)
 Base.metadata.create_all(bind=engine)
+run_light_migrations()
 
 app = FastAPI(title=settings.APP_NAME, version="1.0.0")
 
@@ -31,6 +32,7 @@ app.include_router(people.router)
 app.include_router(recognition.router)
 app.include_router(attendance.router)
 app.include_router(dashboard.router)
+app.include_router(me.router)
 
 
 @app.get("/api/health")

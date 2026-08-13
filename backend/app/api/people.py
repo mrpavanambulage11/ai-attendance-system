@@ -1,5 +1,6 @@
 import json
 import os
+import secrets
 
 import cv2
 import numpy as np
@@ -8,11 +9,12 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_admin
 from app.core.config import get_settings
+from app.core.security import hash_password
 from app.db.database import get_db
 from app.models.face_embedding import FaceEmbedding
 from app.models.person import Person
 from app.models.user import User
-from app.schemas.person import EnrollResult, PersonCreate, PersonOut, PersonUpdate
+from app.schemas.person import EnrollResult, PersonCreate, PersonOut, PersonUpdate, PortalAccessOut, PortalAccessRequest
 from app.services.face_service import FaceService, get_face_service
 
 router = APIRouter(prefix="/api/people", tags=["people"])
@@ -121,3 +123,37 @@ def enroll_person(
     person.is_enrolled = True
     db.commit()
     return EnrollResult(person_id=person_id, images_used=stored, is_enrolled=True)
+
+
+@router.post("/{person_id}/portal", response_model=PortalAccessOut)
+def enable_portal_access(
+    person_id: int,
+    payload: PortalAccessRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """(Re)issues self-service portal credentials for a tracked person, so they can log in
+    and see their own attendance. Returns the plaintext password once - it is never
+    recoverable afterwards, only resettable."""
+    person = db.get(Person, person_id)
+    if not person:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
+    if not person.email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Add an email for this person first")
+
+    password = payload.password or secrets.token_urlsafe(6)
+    person.hashed_password = hash_password(password)
+    person.portal_enabled = True
+    db.commit()
+    return PortalAccessOut(person_id=person.id, email=person.email, password=password, portal_enabled=True)
+
+
+@router.post("/{person_id}/portal/revoke", response_model=PersonOut)
+def revoke_portal_access(person_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    person = db.get(Person, person_id)
+    if not person:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person not found")
+    person.portal_enabled = False
+    db.commit()
+    db.refresh(person)
+    return person

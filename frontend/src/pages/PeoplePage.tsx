@@ -1,16 +1,24 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, ScanFace, Pencil, Trash2, CheckCircle2, CircleDashed } from 'lucide-react'
+import { Plus, Search, ScanFace, Pencil, Trash2, CheckCircle2, CircleDashed, KeyRound, Copy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Label, Select } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Dialog } from '@/components/ui/dialog'
-import { createPerson, deletePerson, fetchPeople, updatePerson, apiErrorMessage } from '@/lib/api'
+import {
+  createPerson,
+  deletePerson,
+  enablePortalAccess,
+  fetchPeople,
+  revokePortalAccess,
+  updatePerson,
+  apiErrorMessage,
+} from '@/lib/api'
 import { useAuthStore } from '@/lib/auth-store'
 import { toast } from '@/lib/toast-store'
 import { initials } from '@/lib/utils'
-import type { Person } from '@/types'
+import type { Person, PortalAccess } from '@/types'
 
 export function PeoplePage() {
   const isAdmin = useAuthStore((s) => s.user?.role === 'admin')
@@ -19,6 +27,7 @@ export function PeoplePage() {
   const [department, setDepartment] = useState('')
   const [addOpen, setAddOpen] = useState(false)
   const [editing, setEditing] = useState<Person | null>(null)
+  const [portalPerson, setPortalPerson] = useState<Person | null>(null)
 
   const { data: people = [], isLoading } = useQuery({ queryKey: ['people'], queryFn: () => fetchPeople() })
 
@@ -84,6 +93,7 @@ export function PeoplePage() {
               <th className="px-4 py-3 font-medium">ID</th>
               <th className="px-4 py-3 font-medium">Department</th>
               <th className="px-4 py-3 font-medium">Enrollment</th>
+              <th className="px-4 py-3 font-medium">Portal</th>
               <th className="px-4 py-3 font-medium text-right">Actions</th>
             </tr>
           </thead>
@@ -114,6 +124,13 @@ export function PeoplePage() {
                   )}
                 </td>
                 <td className="px-4 py-3">
+                  {person.portal_enabled ? (
+                    <Badge variant="success">Enabled</Badge>
+                  ) : (
+                    <Badge variant="neutral">Disabled</Badge>
+                  )}
+                </td>
+                <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-1">
                     <Link to={`/app/people/${person.id}/enroll`}>
                       <Button variant="ghost" size="icon" title="Enroll face">
@@ -122,6 +139,14 @@ export function PeoplePage() {
                     </Link>
                     {isAdmin && (
                       <>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Portal access"
+                          onClick={() => setPortalPerson(person)}
+                        >
+                          <KeyRound className="h-4 w-4" />
+                        </Button>
                         <Button variant="ghost" size="icon" title="Edit" onClick={() => setEditing(person)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -145,7 +170,7 @@ export function PeoplePage() {
             ))}
             {!isLoading && filtered.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-slate-500">
+                <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
                   No people found.
                 </td>
               </tr>
@@ -156,6 +181,7 @@ export function PeoplePage() {
 
       <AddPersonDialog open={addOpen} onClose={() => setAddOpen(false)} />
       {editing && <EditPersonDialog person={editing} onClose={() => setEditing(null)} />}
+      {portalPerson && <PortalAccessDialog person={portalPerson} onClose={() => setPortalPerson(null)} />}
     </div>
   )
 }
@@ -263,6 +289,90 @@ function EditPersonDialog({ person, onClose }: { person: Person; onClose: () => 
           </Button>
         </div>
       </form>
+    </Dialog>
+  )
+}
+
+function PortalAccessDialog({ person, onClose }: { person: Person; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [issued, setIssued] = useState<PortalAccess | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  const enableMutation = useMutation({
+    mutationFn: () => enablePortalAccess(person.id),
+    onSuccess: (data) => {
+      setIssued(data)
+      queryClient.invalidateQueries({ queryKey: ['people'] })
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, 'Could not enable portal access')),
+  })
+
+  const revokeMutation = useMutation({
+    mutationFn: () => revokePortalAccess(person.id),
+    onSuccess: () => {
+      toast.success('Portal access revoked')
+      queryClient.invalidateQueries({ queryKey: ['people'] })
+      onClose()
+    },
+    onError: (error) => toast.error(apiErrorMessage(error)),
+  })
+
+  async function handleCopy() {
+    if (!issued) return
+    await navigator.clipboard.writeText(`${issued.email} / ${issued.password}`)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title="Self-service portal access"
+      description={`Lets ${person.full_name} sign in to see their own attendance and attendance %.`}
+    >
+      {!person.email ? (
+        <p className="text-sm text-amber-400">Add an email for this person before enabling portal access.</p>
+      ) : issued ? (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-400">
+            Share these credentials with {person.full_name} - the password is shown only once.
+          </p>
+          <div className="space-y-1 rounded-lg border border-slate-800 bg-slate-950/60 p-3 font-mono text-sm">
+            <p className="text-slate-300">{issued.email}</p>
+            <p className="text-slate-300">{issued.password}</p>
+          </div>
+          <Button type="button" variant="outline" className="w-full" onClick={handleCopy}>
+            <Copy className="h-4 w-4" /> {copied ? 'Copied' : 'Copy credentials'}
+          </Button>
+          <Button type="button" className="w-full" onClick={onClose}>
+            Done
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <p className="text-sm text-slate-400">
+            {person.portal_enabled
+              ? `Portal access is enabled for ${person.email}. Resetting issues a new password and invalidates the old one.`
+              : `This creates a login for ${person.email} so they can view their own attendance dashboard.`}
+          </p>
+          <div className="flex justify-end gap-2">
+            {person.portal_enabled && (
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => revokeMutation.mutate()}
+                disabled={revokeMutation.isPending}
+              >
+                Revoke access
+              </Button>
+            )}
+            <Button type="button" onClick={() => enableMutation.mutate()} disabled={enableMutation.isPending}>
+              {person.portal_enabled ? 'Reset password' : 'Enable portal access'}
+            </Button>
+          </div>
+        </div>
+      )}
     </Dialog>
   )
 }

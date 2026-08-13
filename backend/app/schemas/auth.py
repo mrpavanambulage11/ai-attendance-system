@@ -24,6 +24,6 @@ class UserOut(BaseModel):
     id: int
     email: str
     full_name: str
-    role: UserRole
+    role: str  # "admin" | "teacher" | "person" - plain str since a person login has no UserRole membership
 
     model_config = {"from_attributes": True}

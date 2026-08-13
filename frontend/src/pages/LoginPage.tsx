@@ -71,8 +71,11 @@ export function LoginPage() {
             Sign in
           </Button>
           <p className="text-center text-xs text-slate-500">
-            Default demo login: <code className="text-slate-400">admin@attendance.io</code> - password from
+            Admin demo login: <code className="text-slate-400">admin@attendance.io</code> - password from
             your <code className="text-slate-400">.env</code>
+            <br />
+            Portal demo login: <code className="text-slate-400">emp001@portal.attendance.io</code> /{' '}
+            <code className="text-slate-400">Demo@123</code>
           </p>
         </form>
 

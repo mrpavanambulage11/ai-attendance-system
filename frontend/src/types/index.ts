@@ -1,4 +1,5 @@
-export type UserRole = 'admin' | 'teacher'
+export type UserRole = 'admin' | 'teacher' | 'person'
+export type StaffRole = 'admin' | 'teacher'
 
 export interface AuthUser {
   id: number
@@ -16,7 +17,15 @@ export interface Person {
   photo_path: string | null
   is_active: boolean
   is_enrolled: boolean
+  portal_enabled: boolean
   created_at: string
+}
+
+export interface PortalAccess {
+  person_id: number
+  email: string
+  password: string
+  portal_enabled: boolean
 }
 
 export type AttendanceStatus = 'present' | 'late'
@@ -82,4 +91,26 @@ export interface LeaderboardEntry {
 export interface SystemSettings {
   late_cutoff_time: string
   working_days: string
+}
+
+export interface MySummary {
+  full_name: string
+  external_id: string
+  department: string
+  photo_path: string | null
+  today_status: 'present' | 'late' | 'absent'
+  this_month_rate: number
+  last_30_days_rate: number
+  days_present_30d: number
+  days_late_30d: number
+  days_absent_30d: number
+  current_streak: number
+}
+
+export interface MyRecord {
+  id: number
+  timestamp: string
+  status: AttendanceStatus
+  method: AttendanceMethod
+  confidence: number | null
 }

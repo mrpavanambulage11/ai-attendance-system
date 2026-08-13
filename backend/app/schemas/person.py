@@ -26,6 +26,7 @@ class PersonOut(BaseModel):
     photo_path: str | None
     is_active: bool
     is_enrolled: bool
+    portal_enabled: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -35,3 +36,14 @@ class EnrollResult(BaseModel):
     person_id: int
     images_used: int
     is_enrolled: bool
+
+
+class PortalAccessRequest(BaseModel):
+    password: str | None = None
+
+
+class PortalAccessOut(BaseModel):
+    person_id: int
+    email: str
+    password: str
+    portal_enabled: bool

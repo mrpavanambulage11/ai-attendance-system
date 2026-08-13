@@ -10,15 +10,18 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '@/lib/auth-store'
 import { cn, initials } from '@/lib/utils'
+import type { UserRole } from '@/types'
 
-const NAV = [
-  { to: '/app', label: 'Dashboard', icon: LayoutDashboard, end: true, adminOnly: false },
-  { to: '/app/people', label: 'People', icon: Users, end: false, adminOnly: false },
-  { to: '/app/attendance/live', label: 'Live Attendance', icon: ScanFace, end: false, adminOnly: false },
-  { to: '/app/attendance/records', label: 'Records', icon: ClipboardList, end: false, adminOnly: false },
-  { to: '/app/reports', label: 'Reports', icon: BarChart3, end: false, adminOnly: false },
-  { to: '/app/settings', label: 'Settings', icon: SettingsIcon, end: false, adminOnly: true },
+const NAV: { to: string; label: string; icon: typeof LayoutDashboard; end: boolean; roles: UserRole[] }[] = [
+  { to: '/app', label: 'Dashboard', icon: LayoutDashboard, end: true, roles: ['admin', 'teacher', 'person'] },
+  { to: '/app/people', label: 'People', icon: Users, end: false, roles: ['admin', 'teacher'] },
+  { to: '/app/attendance/live', label: 'Live Attendance', icon: ScanFace, end: false, roles: ['admin', 'teacher'] },
+  { to: '/app/attendance/records', label: 'Records', icon: ClipboardList, end: false, roles: ['admin', 'teacher'] },
+  { to: '/app/reports', label: 'Reports', icon: BarChart3, end: false, roles: ['admin', 'teacher'] },
+  { to: '/app/settings', label: 'Settings', icon: SettingsIcon, end: false, roles: ['admin'] },
 ]
+
+const ROLE_LABEL: Record<UserRole, string> = { admin: 'admin', teacher: 'teacher', person: 'portal account' }
 
 export function AppShell() {
   const user = useAuthStore((s) => s.user)
@@ -44,7 +47,7 @@ export function AppShell() {
         </div>
 
         <nav className="flex flex-1 flex-col gap-1">
-          {NAV.filter((item) => !item.adminOnly || user?.role === 'admin').map((item) => (
+          {NAV.filter((item) => item.roles.includes(user?.role ?? 'teacher')).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -70,7 +73,7 @@ export function AppShell() {
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-xs font-medium">{user?.full_name}</p>
-            <p className="truncate text-[11px] capitalize text-slate-500">{user?.role}</p>
+            <p className="truncate text-[11px] capitalize text-slate-500">{user ? ROLE_LABEL[user.role] : ''}</p>
           </div>
           <button
             onClick={handleLogout}

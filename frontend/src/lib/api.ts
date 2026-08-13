@@ -7,7 +7,10 @@ import type {
   DashboardSummary,
   DepartmentBreakdown,
   LeaderboardEntry,
+  MyRecord,
+  MySummary,
   Person,
+  PortalAccess,
   RecognitionResult,
   SystemSettings,
   TrendPoint,
@@ -73,6 +76,16 @@ export async function updatePerson(id: number, payload: Partial<Pick<Person, 'fu
 
 export async function deletePerson(id: number) {
   await api.delete(`/people/${id}`)
+}
+
+export async function enablePortalAccess(id: number, password?: string) {
+  const { data } = await api.post<PortalAccess>(`/people/${id}/portal`, { password: password || undefined })
+  return data
+}
+
+export async function revokePortalAccess(id: number) {
+  const { data } = await api.post<Person>(`/people/${id}/portal/revoke`)
+  return data
 }
 
 export async function enrollPerson(id: number, images: Blob[]) {
@@ -161,5 +174,21 @@ export async function fetchSettings() {
 
 export async function updateSettings(payload: Partial<SystemSettings>) {
   const { data } = await api.put<SystemSettings>('/dashboard/settings', payload)
+  return data
+}
+
+// --- Me (person self-service portal) ---
+export async function fetchMySummary() {
+  const { data } = await api.get<MySummary>('/me/summary')
+  return data
+}
+
+export async function fetchMyTrend(days = 30) {
+  const { data } = await api.get<TrendPoint[]>('/me/trend', { params: { days } })
+  return data
+}
+
+export async function fetchMyRecords(limit = 100) {
+  const { data } = await api.get<MyRecord[]>('/me/records', { params: { limit } })
   return data
 }
