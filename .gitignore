@@ -1,3 +1,8 @@
+# Env files (docker-compose reads a root .env for JWT_SECRET_KEY / ADMIN_* overrides - never commit it)
+.env
+.env.*
+!.env.example
+
 # Python / backend
 backend/venv/
 backend/__pycache__/
@@ -5,14 +10,12 @@ backend/**/__pycache__/
 *.pyc
 backend/.pytest_cache/
 backend/attendance.db
-backend/.env
 backend/storage/faces/*
 !backend/storage/faces/.gitkeep
 
 # Node / frontend
 frontend/node_modules/
 frontend/dist/
-frontend/.env
 frontend/*.tsbuildinfo
 
 # Editors / OS
