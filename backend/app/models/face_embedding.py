@@ -1,20 +1,23 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import ARRAY, DateTime, Float, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
 
 
 class FaceEmbedding(Base):
-    """Stores a numeric face embedding (as a JSON-encoded float list), never the raw image."""
+    """Stores a numeric face embedding (a Facenet512 float vector averaged across the 3-5
+    enrollment frames), never the raw enrollment images. `employee_id` is unique - re-enrolling
+    an employee OVERWRITES this row rather than averaging with the old embedding, so enrollment
+    always reflects only the most recent capture. See app/api/employees.py for the enroll-face
+    handler where this replace-not-average decision is applied."""
 
     __tablename__ = "face_embeddings"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    person_id: Mapped[int] = mapped_column(ForeignKey("people.id", ondelete="CASCADE"))
-    vector_json: Mapped[str] = mapped_column(String, nullable=False)
-    model_name: Mapped[str] = mapped_column(String(50), default="Facenet512")
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), unique=True)
+    embedding: Mapped[list[float]] = mapped_column(ARRAY(Float), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    person: Mapped["Person"] = relationship(back_populates="embeddings")
+    employee: Mapped["Employee"] = relationship(back_populates="embedding")

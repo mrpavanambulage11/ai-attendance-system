@@ -1,21 +1,18 @@
 """Test fixtures.
 
-Sets DATABASE_URL / STORAGE_DIR to isolated temp locations *before* importing anything from
-`app`, and swaps the real (heavy, model-loading) FaceService/LivenessService for deterministic
-fakes via FastAPI dependency overrides - so the suite runs fast, offline, and without ever
-downloading DeepFace/MediaPipe model weights.
+Runs against a real PostgreSQL database (DATABASE_URL, defaulting to `attendance_test` on the
+same server used for development) rather than SQLite, because FaceEmbedding stores its vector
+in a native Postgres ARRAY column with no SQLite equivalent. The database itself must already
+exist (`createdb attendance_test`) - this fixture only creates/drops the tables inside it.
+Swaps the real (heavy, model-loading) FaceService for a deterministic fake via a FastAPI
+dependency override, so the suite runs fast, offline, and without downloading DeepFace weights.
 """
 
 import os
-import shutil
-import tempfile
 import uuid
 
-_TEST_DB_FD, TEST_DB_PATH = tempfile.mkstemp(suffix=".db")
-os.close(_TEST_DB_FD)
-os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"
+os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/attendance_test")
 os.environ["JWT_SECRET_KEY"] = "test-secret-key"
-os.environ["STORAGE_DIR"] = tempfile.mkdtemp(prefix="attendance-test-faces-")
 
 import numpy as np
 import pytest
@@ -25,17 +22,26 @@ import app.models  # noqa: E402
 from app.core.security import hash_password
 from app.db.database import Base, SessionLocal, engine
 from app.main import app as fastapi_app
-from app.models.user import User, UserRole
-from app.services.face_service import FaceService, get_face_service
-from app.services.liveness_service import get_liveness_service
+from app.models.admin_user import AdminUser
+from app.services.face_service import FaceService, NoFaceDetectedError, get_face_service
 
 
 class FakeFaceService:
-    """Derives a deterministic embedding from the raw image bytes so identical fixture
-    images (same "person") map to the same vector and different images map far apart -
-    without ever loading DeepFace."""
+    """Derives a deterministic embedding from the raw image bytes so identical fixture images
+    map to the same vector and different images map far apart - without loading DeepFace. Pass
+    `error` to simulate a NoFaceDetectedError/MultipleFacesDetectedError from a specific frame."""
 
-    def get_embedding(self, image_bgr):
+    def __init__(self, error: Exception | None = None):
+        self.error = error
+
+    def warm_up(self):
+        pass
+
+    def detect_and_embed(self, image_bgr):
+        if self.error is not None:
+            raise self.error
+        if image_bgr is None:
+            raise NoFaceDetectedError("Could not read the uploaded image")
         digest = abs(hash(image_bgr.tobytes())) % (2**32)
         rng = np.random.default_rng(digest)
         return rng.normal(size=128).astype("float32")
@@ -48,24 +54,13 @@ class FakeFaceService:
         return FaceService().find_best_match(embedding, candidates, threshold)
 
 
-class FakeLivenessService:
-    def __init__(self, passes: bool = True):
-        self.passes = passes
-
-    def check_blink(self, frames_rgb):
-        return self.passes
-
-
 @pytest.fixture(scope="session", autouse=True)
 def _setup_db():
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     yield
+    Base.metadata.drop_all(bind=engine)
     engine.dispose()
-    for cleanup in (lambda: os.remove(TEST_DB_PATH), lambda: shutil.rmtree(os.environ["STORAGE_DIR"])):
-        try:
-            cleanup()
-        except OSError:
-            pass
 
 
 @pytest.fixture
@@ -79,8 +74,12 @@ def db():
 
 @pytest.fixture
 def client():
+    """TestClient requests all share the same fake client IP, so the rate limiter is disabled
+    here by default - otherwise unrelated tests would start tripping each other's limits just
+    from running in the same process. Tests that specifically exercise rate limiting flip
+    `fastapi_app.state.limiter.enabled` back on for their own duration."""
     fastapi_app.dependency_overrides[get_face_service] = lambda: FakeFaceService()
-    fastapi_app.dependency_overrides[get_liveness_service] = lambda: FakeLivenessService(passes=True)
+    fastapi_app.state.limiter.enabled = False
     with TestClient(fastapi_app) as test_client:
         yield test_client
     fastapi_app.dependency_overrides.clear()
@@ -88,9 +87,9 @@ def client():
 
 @pytest.fixture
 def admin_user(db):
-    email = f"admin_{uuid.uuid4().hex[:8]}@example.com"
+    username = f"admin_{uuid.uuid4().hex[:8]}"
     password = "Passw0rd!"
-    user = User(email=email, full_name="Test Admin", hashed_password=hash_password(password), role=UserRole.ADMIN)
+    user = AdminUser(username=username, hashed_password=hash_password(password))
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -100,7 +99,7 @@ def admin_user(db):
 @pytest.fixture
 def admin_token(client, admin_user):
     user, password = admin_user
-    resp = client.post("/api/auth/login", json={"email": user.email, "password": password})
+    resp = client.post("/auth/login", json={"username": user.username, "password": password})
     assert resp.status_code == 200
     return resp.json()["access_token"]
 

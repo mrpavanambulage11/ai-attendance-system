@@ -1,22 +1,8 @@
 import axios from 'axios'
 import { useAuthStore } from '@/lib/auth-store'
-import type {
-  AttendanceRecord,
-  AttendanceStatus,
-  AuthUser,
-  DashboardSummary,
-  DepartmentBreakdown,
-  LeaderboardEntry,
-  MyRecord,
-  MySummary,
-  Person,
-  PortalAccess,
-  RecognitionResult,
-  SystemSettings,
-  TrendPoint,
-} from '@/types'
+import type { AttendanceRecord, Employee, EmployeeRegisterResult, MarkAttendanceResult } from '@/types'
 
-export const api = axios.create({ baseURL: '/api' })
+export const api = axios.create()
 
 api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token
@@ -45,72 +31,79 @@ export function apiErrorMessage(error: unknown, fallback = 'Something went wrong
 }
 
 // --- Auth ---
-export async function login(email: string, password: string) {
+export async function login(username: string, password: string) {
   const { data } = await api.post<{ access_token: string; token_type: string }>('/auth/login', {
-    email,
+    username,
     password,
   })
   return data
 }
 
-export async function fetchMe() {
-  const { data } = await api.get<AuthUser>('/auth/me')
+// --- Employees ---
+export async function fetchEmployees() {
+  const { data } = await api.get<Employee[]>('/employees')
   return data
 }
 
-// --- People ---
-export async function fetchPeople(department?: string) {
-  const { data } = await api.get<Person[]>('/people', { params: { department } })
+export async function createEmployee(payload: { name: string; employee_code: string; department: string }) {
+  const { data } = await api.post<Employee>('/employees', payload)
   return data
 }
 
-export async function createPerson(payload: { full_name: string; external_id: string; department: string; email?: string }) {
-  const { data } = await api.post<Person>('/people', payload)
-  return data
-}
-
-export async function updatePerson(id: number, payload: Partial<Pick<Person, 'full_name' | 'department' | 'email' | 'is_active'>>) {
-  const { data } = await api.patch<Person>(`/people/${id}`, payload)
-  return data
-}
-
-export async function deletePerson(id: number) {
-  await api.delete(`/people/${id}`)
-}
-
-export async function enablePortalAccess(id: number, password?: string) {
-  const { data } = await api.post<PortalAccess>(`/people/${id}/portal`, { password: password || undefined })
-  return data
-}
-
-export async function revokePortalAccess(id: number) {
-  const { data } = await api.post<Person>(`/people/${id}/portal/revoke`)
-  return data
-}
-
-export async function enrollPerson(id: number, images: Blob[]) {
+export async function enrollFace(employeeId: number, images: Blob[]) {
   const formData = new FormData()
   images.forEach((image, index) => formData.append('files', image, `capture-${index}.jpg`))
   // Do NOT set Content-Type manually - the browser must generate the multipart boundary itself.
-  const { data } = await api.post<{ person_id: number; images_used: number; is_enrolled: boolean }>(
-    `/people/${id}/enroll`,
+  const { data } = await api.post<{ employee_id: number; frames_used: number; message: string }>(
+    `/employees/${employeeId}/enroll-face`,
     formData,
   )
   return data
 }
 
-// --- Recognition ---
-export async function identifyFace(frames: Blob[]) {
+export interface RegisterEmployeePayload {
+  name: string
+  department: string
+  department_id: string
+  position: string
+  joining_date: string
+  hr_name: string
+  office_location: string
+  contact: string
+  address: string
+  shift_type: string
+  confirmed: boolean
+  images: Blob[]
+}
+
+export async function registerEmployee(payload: RegisterEmployeePayload) {
   const formData = new FormData()
-  frames.forEach((frame, index) => formData.append('frames', frame, `frame-${index}.jpg`))
-  const { data } = await api.post<RecognitionResult>('/recognition/identify', formData)
+  formData.append('name', payload.name)
+  formData.append('department', payload.department)
+  formData.append('department_id', payload.department_id)
+  formData.append('position', payload.position)
+  formData.append('joining_date', payload.joining_date)
+  formData.append('hr_name', payload.hr_name)
+  formData.append('office_location', payload.office_location)
+  formData.append('contact', payload.contact)
+  formData.append('address', payload.address)
+  formData.append('shift_type', payload.shift_type)
+  formData.append('confirmed', String(payload.confirmed))
+  payload.images.forEach((image, index) => formData.append('files', image, `capture-${index}.jpg`))
+  const { data } = await api.post<EmployeeRegisterResult>('/employees/register', formData)
   return data
 }
 
 // --- Attendance ---
+export async function markAttendance(frame: Blob) {
+  const formData = new FormData()
+  formData.append('file', frame, 'frame.jpg')
+  const { data } = await api.post<MarkAttendanceResult>('/attendance/mark', formData)
+  return data
+}
+
 export interface AttendanceFilters {
-  person_id?: number
-  department?: string
+  employee_id?: number
   date_from?: string
   date_to?: string
 }
@@ -118,20 +111,6 @@ export interface AttendanceFilters {
 export async function fetchAttendance(filters: AttendanceFilters = {}) {
   const { data } = await api.get<AttendanceRecord[]>('/attendance', { params: filters })
   return data
-}
-
-export async function createAttendance(personId: number, status: AttendanceStatus) {
-  const { data } = await api.post<AttendanceRecord>('/attendance', { person_id: personId, status })
-  return data
-}
-
-export async function updateAttendance(id: number, payload: { status?: AttendanceStatus }) {
-  const { data } = await api.patch<AttendanceRecord>(`/attendance/${id}`, payload)
-  return data
-}
-
-export async function deleteAttendance(id: number) {
-  await api.delete(`/attendance/${id}`)
 }
 
 export async function downloadAttendanceExport(filters: AttendanceFilters = {}) {
@@ -144,51 +123,4 @@ export async function downloadAttendanceExport(filters: AttendanceFilters = {}) 
   link.click()
   link.remove()
   URL.revokeObjectURL(url)
-}
-
-// --- Dashboard ---
-export async function fetchDashboardSummary() {
-  const { data } = await api.get<DashboardSummary>('/dashboard/summary')
-  return data
-}
-
-export async function fetchTrends(days = 14) {
-  const { data } = await api.get<TrendPoint[]>('/dashboard/trends', { params: { days } })
-  return data
-}
-
-export async function fetchDepartments() {
-  const { data } = await api.get<DepartmentBreakdown[]>('/dashboard/departments')
-  return data
-}
-
-export async function fetchLeaderboard(days = 30) {
-  const { data } = await api.get<LeaderboardEntry[]>('/dashboard/leaderboard', { params: { days } })
-  return data
-}
-
-export async function fetchSettings() {
-  const { data } = await api.get<SystemSettings>('/dashboard/settings')
-  return data
-}
-
-export async function updateSettings(payload: Partial<SystemSettings>) {
-  const { data } = await api.put<SystemSettings>('/dashboard/settings', payload)
-  return data
-}
-
-// --- Me (person self-service portal) ---
-export async function fetchMySummary() {
-  const { data } = await api.get<MySummary>('/me/summary')
-  return data
-}
-
-export async function fetchMyTrend(days = 30) {
-  const { data } = await api.get<TrendPoint[]>('/me/trend', { params: { days } })
-  return data
-}
-
-export async function fetchMyRecords(limit = 100) {
-  const { data } = await api.get<MyRecord[]>('/me/records', { params: { limit } })
-  return data
 }

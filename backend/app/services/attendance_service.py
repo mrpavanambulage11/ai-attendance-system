@@ -1,25 +1,8 @@
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.models.attendance import Attendance, AttendanceMethod, AttendanceStatus
-from app.models.settings import SystemSettings
-
-
-def get_or_create_settings(db: Session) -> SystemSettings:
-    row = db.get(SystemSettings, 1)
-    if not row:
-        row = SystemSettings(id=1)
-        db.add(row)
-        db.commit()
-        db.refresh(row)
-    return row
-
-
-def compute_status(now: datetime, late_cutoff: str) -> AttendanceStatus:
-    hour, minute = (int(part) for part in late_cutoff.split(":"))
-    cutoff = time(hour=hour, minute=minute)
-    return AttendanceStatus.LATE if now.time() > cutoff else AttendanceStatus.PRESENT
+from app.models.attendance import AttendanceRecord, AttendanceType
 
 
 def _day_bounds(day: datetime) -> tuple[datetime, datetime]:
@@ -27,35 +10,34 @@ def _day_bounds(day: datetime) -> tuple[datetime, datetime]:
     return start, start + timedelta(days=1)
 
 
-def already_marked_today(db: Session, person_id: int, today: datetime) -> bool:
-    start, end = _day_bounds(today)
-    return (
-        db.query(Attendance)
-        .filter(Attendance.person_id == person_id, Attendance.timestamp >= start, Attendance.timestamp < end)
+def next_attendance_type(db: Session, employee_id: int, now: datetime) -> AttendanceType:
+    """Check-in vs check-out is inferred from whether there's already an open check-in today:
+    no record yet today (or the latest record today is a check-out) means the next scan is a
+    check-in; a most-recent record that's a check-in means the next scan is a check-out."""
+    start, end = _day_bounds(now)
+    last_today = (
+        db.query(AttendanceRecord)
+        .filter(
+            AttendanceRecord.employee_id == employee_id,
+            AttendanceRecord.timestamp >= start,
+            AttendanceRecord.timestamp < end,
+        )
+        .order_by(AttendanceRecord.timestamp.desc())
         .first()
-        is not None
     )
+    if last_today is None or last_today.type == AttendanceType.CHECK_OUT:
+        return AttendanceType.CHECK_IN
+    return AttendanceType.CHECK_OUT
 
 
 def mark_attendance(
-    db: Session,
-    person_id: int,
-    method: AttendanceMethod,
-    confidence: float | None = None,
-    marked_by: str | None = None,
-    status: AttendanceStatus | None = None,
-) -> Attendance:
-    settings_row = get_or_create_settings(db)
-    now = datetime.now()
-    if status is None:
-        status = compute_status(now, settings_row.late_cutoff_time)
-    record = Attendance(
-        person_id=person_id,
-        timestamp=now,
-        status=status,
-        method=method,
-        confidence=confidence,
-        marked_by=marked_by,
+    db: Session, employee_id: int, attendance_type: AttendanceType, confidence_score: float | None
+) -> AttendanceRecord:
+    record = AttendanceRecord(
+        employee_id=employee_id,
+        timestamp=datetime.now(),
+        type=attendance_type,
+        confidence_score=confidence_score,
     )
     db.add(record)
     db.commit()

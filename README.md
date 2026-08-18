@@ -1,67 +1,24 @@
-# AI-Based Smart Attendance System
+# AI Based Face authorization Attendance system
 
-A full-stack attendance system that recognizes people by their face instead of a badge swipe or
-manual roll call - with a **liveness check** so a printed photo or phone screen can't spoof a
-check-in, plus a real-time analytics dashboard.
+A web application that marks attendance by face instead of a badge swipe or manual roll call.
 
-> Built with FastAPI, DeepFace, MediaPipe, SQLAlchemy, React, TypeScript, and Tailwind CSS.
+> Built with FastAPI, DeepFace, SQLAlchemy, PostgreSQL, React, TypeScript, and Tailwind CSS.
 
-## Why this exists
+## How it works
 
-Most "attendance system" projects on GitHub are CRUD apps with a face-recognition demo bolted on
-top - a static photo is matched once and that's the whole security model. This project treats
-recognition as a small pipeline with a real failure mode to defend against:
+1. **Enroll (admin-only).** An admin creates an employee profile, then captures 3-5 webcam
+   frames of their face. Each frame is detected and embedded (DeepFace / Facenet512); the
+   resulting embeddings are averaged into a single stored vector per employee.
+2. **Mark attendance (kiosk/self-serve).** Anyone stands in front of the camera and scans. The
+   frame is detected, embedded, and compared against every stored embedding via cosine
+   similarity - implemented directly, not through `DeepFace.find`, so matching is auditable and
+   unit-testable. A match above the configured threshold logs a timestamped check-in or
+   check-out (inferred from whether the employee already has an open check-in today). Below
+   threshold, the scan is rejected as "face not recognized" - it never guesses.
+3. **Admin dashboard.** View the employee list and enrollment status, filter attendance records
+   by employee/date range, and export them as CSV.
 
-1. **Detect + embed** a face from a webcam frame (DeepFace / Facenet512).
-2. **Match** the embedding against stored people via cosine similarity - implemented directly
-   (not `DeepFace.find`), so the matching logic is auditable and unit-testable.
-3. **Verify liveness** - a short burst of frames must show a real blink (Eye Aspect Ratio dip via
-   MediaPipe FaceMesh) before a match is allowed to count. A single photo can never blink.
-4. Only then is attendance marked - once per person per day, with a confidence score recorded.
-
-It also only stores **numeric face embeddings**, not a library of raw biometric photos, beyond one
-profile picture kept for the UI.
-
-## Features
-
-- **Face-recognition check-in** with live webcam bounding-box-style feedback and a session log.
-- **Blink-based liveness detection** - the key differentiator over trivially-spoofable demos.
-- **Role-based auth** (Admin / Teacher) with JWT, protecting mutating endpoints.
-- **People management** - CRUD, department grouping, multi-shot enrollment flow.
-- **Attendance records** - filterable table, manual override, CSV export.
-- **Analytics dashboard** - today's stats, a 14-day trend chart, department breakdown, and a
-  30-day attendance leaderboard.
-- **Configurable rules** - late-arrival cutoff time and working days.
-- **Seed script** with ~30 days of realistic demo attendance history so the dashboard isn't empty
-  on first run.
-- Zero-config **SQLite** by default; swap to Postgres with one environment variable.
-
-## Architecture
-
-```
-┌─────────────────┐        REST + multipart          ┌──────────────────────┐
-│  React + Vite    │ ───────────────────────────────▶ │      FastAPI          │
-│  TypeScript       │ ◀─────────────────────────────── │                        │
-│  Tailwind CSS     │        JSON / JWT                │  ┌──────────────────┐ │
-│  TanStack Query   │                                   │  │ FaceService        │ │
-│  Recharts         │                                   │  │  DeepFace (Facenet)│ │
-└─────────────────┘                                   │  │  cosine similarity │ │
-                                                        │  └──────────────────┘ │
-                                                        │  ┌──────────────────┐ │
-                                                        │  │ LivenessService    │ │
-                                                        │  │  MediaPipe FaceMesh│ │
-                                                        │  │  blink (EAR) check │ │
-                                                        │  └──────────────────┘ │
-                                                        │           │            │
-                                                        │   SQLAlchemy ORM       │
-                                                        │           │            │
-                                                        │      SQLite / Postgres │
-                                                        └──────────────────────┘
-```
-
-Both AI services sit behind FastAPI dependency-injected interfaces
-(`get_face_service`, `get_liveness_service`), so the test suite swaps in deterministic fakes and
-never has to download model weights or touch a real camera.
+Only numeric face embeddings are stored - never a library of raw enrollment photos.
 
 ## Project structure
 
@@ -70,37 +27,65 @@ backend/
   app/
     core/       settings, JWT/password helpers
     db/         SQLAlchemy engine/session
-    models/     User, Person, FaceEmbedding, Attendance, SystemSettings
+    models/     Employee, FaceEmbedding, AttendanceRecord, AdminUser
     schemas/    Pydantic request/response models
-    api/        auth, people, recognition, attendance, dashboard routers
-    services/   face_service, liveness_service, attendance_service
-    seed.py     bootstrap admin + demo data
-  tests/        pytest suite (auth, people, attendance, matching)
+    api/        auth, employees, attendance routers
+    services/   face_service (detect+embed+match), attendance_service (check-in/out logic)
+    seed.py     bootstraps the admin account
+  alembic/      schema migrations
+  tests/        pytest suite (auth, employees, attendance/matching)
 frontend/
   src/
-    pages/      Landing, Login, Dashboard, People, Enroll, LiveAttendance, Records, Reports, Settings
-    components/ ui primitives, charts, layout shell, webcam hook
+    pages/      LoginPage, EmployeesPage, EnrollFacePage, MarkAttendancePage, AttendanceRecordsPage
+    components/ ui primitives, layout shell
     lib/        API client, auth store, toast store
-docker-compose.yml
 ```
+
+## API endpoints
+
+| Method | Path                             | Auth  | Purpose                                  |
+|--------|-----------------------------------|-------|-------------------------------------------|
+| POST   | `/auth/login`                     | -     | Admin login, returns a JWT                |
+| POST   | `/employees`                      | admin | Create an employee                         |
+| GET    | `/employees`                      | admin | List employees                             |
+| POST   | `/employees/{id}/enroll-face`     | admin | Capture + store a face embedding           |
+| POST   | `/attendance/mark`                | -     | Kiosk scan - match a face, log attendance  |
+| GET    | `/attendance`                     | admin | List attendance, filterable by employee/date range |
+| GET    | `/attendance/export`              | admin | CSV export                                 |
+
+`/attendance/mark` is intentionally not JWT-protected - it's meant to run unattended on a kiosk.
 
 ## Running it locally
 
-### Backend
+### 1. Database
+
+Requires PostgreSQL. Create a database (defaults assume `attendance` on `localhost:5432`):
+
+```bash
+createdb attendance
+```
+
+### 2. Backend
 
 ```bash
 cd backend
 python -m venv venv
 venv\Scripts\activate        # Windows; use `source venv/bin/activate` on macOS/Linux
 pip install -r requirements.txt
-copy .env.example .env       # cp on macOS/Linux - then edit as needed
-python -m app.seed           # creates the admin user + demo attendance history
+copy .env.example .env       # cp on macOS/Linux - then edit DATABASE_URL etc. as needed
+alembic upgrade head         # creates the schema
+python -m app.seed           # creates the admin user from ADMIN_USERNAME / ADMIN_PASSWORD
 uvicorn app.main:app --reload
 ```
 
 The API is now at `http://localhost:8000` (interactive docs at `/docs`).
 
-### Frontend
+> `pip install` pulls a CPU-only PyTorch wheel (~150MB) for the liveness/anti-spoofing model, on
+> top of the TensorFlow already needed for face recognition - the first install and the first
+> server startup (which warms up all three models - detector, recognition, anti-spoofing - before
+> accepting requests) are both noticeably slower than subsequent ones.
+
+### 3. Frontend
 
 ```bash
 cd frontend
@@ -108,68 +93,55 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` and sign in with the admin credentials from `backend/.env`
-(defaults: `admin@attendance.io` / `Admin@12345`). The Vite dev server proxies `/api` and
-`/static` to the backend, so no CORS config is needed in development.
+Open `http://localhost:5173`. `/` is the kiosk check-in/check-out screen; `/login` is the admin
+sign-in (defaults: username `admin`, password from `backend/.env`). The Vite dev server proxies
+`/auth`, `/employees`, and `/attendance` to the backend, so no CORS config is needed in
+development.
 
-### Docker
+> Browsers only grant camera access (`getUserMedia`) on `localhost` or over HTTPS.
 
-```bash
-docker compose up --build
-```
-
-Frontend on `http://localhost`, backend on `http://localhost:8000`. Set `JWT_SECRET_KEY`,
-`ADMIN_EMAIL`, and `ADMIN_PASSWORD` in a `.env` file at the repo root to override the defaults.
-
-> Browsers only grant camera access (`getUserMedia`) on `localhost` or over HTTPS. `http://localhost`
-> works out of the box; if you deploy this behind a real domain, put it behind HTTPS (e.g. Caddy,
-> nginx + Let's Encrypt, or your host's built-in TLS) or the Enroll/Live Attendance pages won't be
-> able to open the camera.
-
-### Trying face recognition yourself
-
-The seed script creates ten demo people for the dashboard/charts, but it can't fabricate their
-face embeddings (there are no real photos to seed with). To see the actual recognition + liveness
-flow end-to-end:
-
-1. Sign in, go to **People → Add person**, create a profile for yourself.
-2. Click the scan icon to open **Enroll face**, capture 4-5 shots from slightly different angles.
-3. Go to **Live Attendance**, click **Scan to check in**, and blink naturally during the burst.
-
-## Testing
+### Testing
 
 ```bash
 cd backend
+createdb attendance_test     # once, before the first run
 pytest
 ```
 
-The suite covers auth (login/roles), people CRUD, attendance business logic (late-cutoff
-calculation, duplicate-check-in prevention), CSV export, and the cosine-similarity matching
-function as a pure unit test. `FaceService`/`LivenessService` are replaced with deterministic
-fakes via FastAPI's dependency-override mechanism, so tests run in seconds, fully offline.
+The suite covers auth, employee CRUD, the check-in/check-out inference logic, CSV export, the
+`/attendance/mark` no-face/multiple-face rejection paths, and the cosine-similarity matching
+function as a pure unit test. `FaceService` is replaced with a deterministic fake via FastAPI's
+dependency-override mechanism, so tests run in seconds without loading DeepFace or touching a
+real camera. Tests run against a real Postgres database (`attendance_test`) rather than SQLite,
+because `FaceEmbedding.embedding` is a native Postgres `ARRAY(Float)` column with no SQLite
+equivalent.
+
+## Environment variables
+
+See `backend/.env.example` for the full list: `DATABASE_URL`, `JWT_SECRET_KEY`,
+`FACE_MATCH_THRESHOLD`, `ADMIN_USERNAME`/`ADMIN_PASSWORD`, `CORS_ORIGINS`.
+
+## Known limitations
+
+- **Spoofing risk, reduced but not eliminated.** Every detected face is passed through DeepFace's
+  Fasnet liveness model (`anti_spoofing=True` in `face_service.py`), which flags an obvious
+  printed photo or phone/tablet screen and rejects it with a clear "looks like a photo or screen"
+  error - on both attendance marking and enrollment/self-registration. It is a real trained model,
+  not a heuristic, but it is not infallible against a high-quality replay attack; treat it as
+  raising the bar; not as a guarantee.
+- **Low-quality/dark frames.** An unreadable or undetectable frame (too dark, blurry, corrupt)
+  never crashes the pipeline - it returns a clear "no face detected" error instead.
+- **Duplicate enrollment.** Re-running `POST /employees/{id}/enroll-face` for an already-enrolled
+  employee **overwrites** their stored embedding rather than averaging it with the old one. This
+  keeps behavior predictable (no drift from repeated partial re-enrollments) and matches the
+  usual intent of re-enrolling - see the comment in `backend/app/api/employees.py`.
 
 ## Design decisions worth knowing about
 
-- **Cosine similarity is implemented directly**, not via `DeepFace.find`, so matching is explicit,
-  testable code rather than a filesystem-scanning black box.
-- **Liveness is a first-class step**, not an afterthought - recognition and liveness are separate
-  services, and a match without a passing liveness check is reported but never marks attendance.
-- **Only embeddings + one profile photo are persisted** per person, not a rotating library of raw
-  enrollment images.
-- **SQLite by default** for a genuine zero-config clone-and-run experience; the ORM layer doesn't
-  care which database is behind `DATABASE_URL`.
-
-## Future enhancements
-
-Deliberately out of scope for now, but natural next steps: email alerts for low attendance, PDF
-report export, and a multi-camera kiosk mode.
-
-## Resume bullet points
-
-- Built a full-stack face-recognition attendance system (FastAPI, React/TypeScript, SQLAlchemy)
-  with a custom cosine-similarity matching pipeline and blink-based liveness detection
-  (MediaPipe) to prevent photo-spoofed check-ins.
-- Designed a JWT-secured REST API with role-based access control, and an analytics dashboard
-  (Recharts) surfacing attendance trends, department breakdowns, and leaderboards from live data.
-- Wrote a pytest suite covering auth, business logic, and matching, using FastAPI dependency
-  overrides to test AI-backed endpoints deterministically without loading ML models.
+- **Cosine similarity is implemented directly**, not via `DeepFace.find`, so matching is
+  explicit, testable code rather than a filesystem-scanning black box.
+- **One embedding per employee.** Enrollment always averages the captured frames into a single
+  vector; there's no history of prior embeddings.
+- **`/attendance/mark` rejects multiple faces**, per spec, and - for consistency - each
+  enrollment frame is held to the same one-face rule, so a bystander in an enrollment shot can't
+  silently poison the stored embedding.

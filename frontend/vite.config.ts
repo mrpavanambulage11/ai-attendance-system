@@ -13,14 +13,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/static': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
+      '/auth': { target: 'http://localhost:8000', changeOrigin: true },
+      '/employees': { target: 'http://localhost:8000', changeOrigin: true },
+      '/attendance': { target: 'http://localhost:8000', changeOrigin: true, ws: true },
     },
   },
 })

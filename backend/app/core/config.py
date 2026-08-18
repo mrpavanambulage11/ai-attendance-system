@@ -5,23 +5,22 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    APP_NAME: str = "AI Attendance System"
-    DATABASE_URL: str = "sqlite:///./attendance.db"
+    APP_NAME: str = "AI Based Face authorization Attendance system"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/attendance"
 
     JWT_SECRET_KEY: str = "dev-secret-change-me"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
 
-    FACE_MATCH_THRESHOLD: float = 0.62
-    LATE_CUTOFF_TIME: str = "09:15"
+    # Cosine similarity cutoff for Facenet512 embeddings - a configurable constant rather than
+    # a magic number buried in matching code. Tune based on the confidence scores logged by the
+    # /attendance/mark pipeline.
+    FACE_MATCH_THRESHOLD: float = 0.6
 
-    ADMIN_EMAIL: str = "admin@attendance.io"
+    ADMIN_USERNAME: str = "admin"
     ADMIN_PASSWORD: str = "Admin@12345"
-    ADMIN_NAME: str = "System Admin"
 
     CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
-
-    STORAGE_DIR: str = "storage/faces"
 
     @property
     def cors_origins_list(self) -> list[str]:

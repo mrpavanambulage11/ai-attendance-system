@@ -1,9 +1,10 @@
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
 sqlalchemy==2.0.36
+alembic==1.14.0
+psycopg2-binary==2.9.10
 pydantic==2.9.2
 pydantic-settings==2.6.1
-email-validator==2.2.0
 python-jose[cryptography]==3.3.0
 passlib==1.7.4
 bcrypt==4.0.1
@@ -12,8 +13,16 @@ python-dotenv==1.0.1
 numpy>=1.26,<2.0
 opencv-python-headless==4.10.0.84
 deepface==0.0.93
-mediapipe==0.10.18
 tf-keras==2.17.0
+
+# CPU-only wheel for DeepFace's Fasnet liveness/anti-spoof model (see face_service.py). The
+# default PyPI "torch" package pulls CUDA runtime bundles we don't need for this - the PyTorch
+# CPU index keeps it to a single ~150MB wheel instead.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.13.0+cpu
+
+slowapi==0.1.10
+
 pytest==8.3.3
 httpx==0.27.2
 pytest-cov==5.0.0

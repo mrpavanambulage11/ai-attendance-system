@@ -25,3 +25,23 @@ export function initials(name: string): string {
     .map((part) => part[0]?.toUpperCase())
     .join('')
 }
+
+export function timeOfDayGreeting(date: Date = new Date()): string {
+  const hour = date.getHours()
+  if (hour < 12) return 'Good morning'
+  if (hour < 17) return 'Good afternoon'
+  return 'Good evening'
+}
+
+export function firstName(fullName: string): string {
+  return fullName.trim().split(/\s+/)[0] ?? fullName
+}
+
+export function dataUrlToBlob(dataUrl: string): Blob {
+  const [header, base64] = dataUrl.split(',')
+  const mime = header.match(/:(.*?);/)?.[1] ?? 'image/jpeg'
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+  return new Blob([bytes], { type: mime })
+}

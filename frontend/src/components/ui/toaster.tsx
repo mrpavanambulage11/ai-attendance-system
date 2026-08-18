@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from 'motion/react'
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react'
 import { useToastStore } from '@/lib/toast-store'
 import { cn } from '@/lib/utils'
@@ -14,24 +15,31 @@ export function Toaster() {
 
   return (
     <div className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-full max-w-sm flex-col gap-2">
-      {toasts.map((t) => {
-        const Icon = ICONS[t.variant]
-        return (
-          <div
-            key={t.id}
-            className={cn(
-              'pointer-events-auto flex items-start gap-2 rounded-lg border px-4 py-3 text-sm shadow-lg backdrop-blur',
-              STYLES[t.variant],
-            )}
-          >
-            <Icon className="mt-0.5 h-4 w-4 shrink-0" />
-            <p className="flex-1">{t.message}</p>
-            <button onClick={() => dismiss(t.id)} className="opacity-60 hover:opacity-100">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        )
-      })}
+      <AnimatePresence initial={false}>
+        {toasts.map((t) => {
+          const Icon = ICONS[t.variant]
+          return (
+            <motion.div
+              key={t.id}
+              layout
+              initial={{ opacity: 0, y: 12, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 40, transition: { duration: 0.15 } }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className={cn(
+                'pointer-events-auto flex items-start gap-2 rounded-lg border px-4 py-3 text-sm shadow-lg backdrop-blur',
+                STYLES[t.variant],
+              )}
+            >
+              <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+              <p className="flex-1">{t.message}</p>
+              <button onClick={() => dismiss(t.id)} className="opacity-60 hover:opacity-100">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </motion.div>
+          )
+        })}
+      </AnimatePresence>
     </div>
   )
 }

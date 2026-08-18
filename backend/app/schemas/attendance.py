@@ -2,23 +2,13 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from app.models.attendance import AttendanceMethod, AttendanceStatus
+from app.models.attendance import AttendanceType
 
 
-class AttendanceCreate(BaseModel):
-    person_id: int
-    status: AttendanceStatus = AttendanceStatus.PRESENT
-
-
-class AttendanceUpdate(BaseModel):
-    status: AttendanceStatus | None = None
-    timestamp: datetime | None = None
-
-
-class PersonSummary(BaseModel):
+class EmployeeSummary(BaseModel):
     id: int
-    full_name: str
-    external_id: str
+    name: str
+    employee_code: str
     department: str
 
     model_config = {"from_attributes": True}
@@ -26,20 +16,17 @@ class PersonSummary(BaseModel):
 
 class AttendanceOut(BaseModel):
     id: int
-    person: PersonSummary
+    employee: EmployeeSummary
     timestamp: datetime
-    status: AttendanceStatus
-    method: AttendanceMethod
-    confidence: float | None
-    marked_by: str | None
+    type: AttendanceType
+    confidence_score: float | None
 
     model_config = {"from_attributes": True}
 
 
-class RecognitionResult(BaseModel):
+class MarkAttendanceResult(BaseModel):
     matched: bool
-    liveness_passed: bool
-    person: PersonSummary | None = None
-    confidence: float | None = None
-    attendance_marked: bool = False
+    employee: EmployeeSummary | None = None
+    type: AttendanceType | None = None
+    confidence_score: float | None = None
     message: str

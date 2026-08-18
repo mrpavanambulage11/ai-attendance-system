@@ -1,116 +1,60 @@
-export type UserRole = 'admin' | 'teacher' | 'person'
-export type StaffRole = 'admin' | 'teacher'
-
 export interface AuthUser {
-  id: number
-  email: string
-  full_name: string
-  role: UserRole
+  username: string
 }
 
-export interface Person {
+export interface Employee {
   id: number
-  full_name: string
-  external_id: string
+  name: string
+  employee_code: string
   department: string
-  email: string | null
-  photo_path: string | null
-  is_active: boolean
-  is_enrolled: boolean
-  portal_enabled: boolean
   created_at: string
+  is_enrolled: boolean
+  department_id: string | null
+  position: string | null
+  joining_date: string | null
+  hr_name: string | null
+  office_location: string | null
+  contact: string | null
+  address: string | null
+  shift_type: string | null
 }
 
-export interface PortalAccess {
-  person_id: number
-  email: string
-  password: string
-  portal_enabled: boolean
-}
+export type AttendanceType = 'check_in' | 'check_out'
 
-export type AttendanceStatus = 'present' | 'late'
-export type AttendanceMethod = 'face' | 'manual'
-
-export interface PersonSummary {
+export interface EmployeeSummary {
   id: number
-  full_name: string
-  external_id: string
+  name: string
+  employee_code: string
   department: string
 }
 
 export interface AttendanceRecord {
   id: number
-  person: PersonSummary
+  employee: EmployeeSummary
   timestamp: string
-  status: AttendanceStatus
-  method: AttendanceMethod
-  confidence: number | null
-  marked_by: string | null
+  type: AttendanceType
+  confidence_score: number | null
 }
 
-export interface RecognitionResult {
+export interface MarkAttendanceResult {
   matched: boolean
-  liveness_passed: boolean
-  person: PersonSummary | null
-  confidence: number | null
-  attendance_marked: boolean
+  employee: EmployeeSummary | null
+  type: AttendanceType | null
+  confidence_score: number | null
   message: string
 }
 
-export interface DashboardSummary {
-  total_people: number
-  present_today: number
-  late_today: number
-  absent_today: number
-  attendance_rate_today: number
+export interface EmployeeRegisterResult {
+  employee: EmployeeSummary
+  frames_used: number
+  message: string
 }
 
-export interface TrendPoint {
-  date: string
-  present: number
-  late: number
-  absent: number
-}
-
-export interface DepartmentBreakdown {
-  department: string
-  present: number
-  total: number
-  rate: number
-}
-
-export interface LeaderboardEntry {
-  person_id: number
-  full_name: string
-  department: string
-  days_present: number
-  total_days: number
-  attendance_rate: number
-}
-
-export interface SystemSettings {
-  late_cutoff_time: string
-  working_days: string
-}
-
-export interface MySummary {
-  full_name: string
-  external_id: string
-  department: string
-  photo_path: string | null
-  today_status: 'present' | 'late' | 'absent'
-  this_month_rate: number
-  last_30_days_rate: number
-  days_present_30d: number
-  days_late_30d: number
-  days_absent_30d: number
-  current_streak: number
-}
-
-export interface MyRecord {
+/** Pushed over /attendance/ws the instant a check-in/check-out is marked anywhere. */
+export interface AttendanceLiveEvent {
   id: number
+  employee: EmployeeSummary
+  type: AttendanceType
+  confidence_score: number | null
   timestamp: string
-  status: AttendanceStatus
-  method: AttendanceMethod
-  confidence: number | null
 }
