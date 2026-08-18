@@ -3,9 +3,10 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # opencv-python-headless still needs a handful of shared libs on Debian slim, even without
-# GUI/X11 support.
+# GUI/X11 support - deepface pulls in something that expects libGL to exist at import time
+# (ImportError: libGL.so.1: cannot open shared object file), even though we never use it.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libglib2.0-0 libsm6 libxext6 libxrender1 \
+    libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
