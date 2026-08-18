@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,6 +8,15 @@ class Settings(BaseSettings):
 
     APP_NAME: str = "AI Based Face authorization Attendance system"
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/attendance"
+
+    @field_validator("DATABASE_URL")
+    @classmethod
+    def _normalize_postgres_scheme(cls, value: str) -> str:
+        # Render (like Heroku) hands out connection strings starting with postgres://, which
+        # SQLAlchemy 1.4+/2.0 no longer recognizes as a dialect - only postgresql:// works.
+        if value.startswith("postgres://"):
+            return "postgresql://" + value[len("postgres://") :]
+        return value
 
     JWT_SECRET_KEY: str = "dev-secret-change-me"
     JWT_ALGORITHM: str = "HS256"
