@@ -121,6 +121,56 @@ equivalent.
 See `backend/.env.example` for the full list: `DATABASE_URL`, `JWT_SECRET_KEY`,
 `FACE_MATCH_THRESHOLD`, `ADMIN_USERNAME`/`ADMIN_PASSWORD`, `CORS_ORIGINS`.
 
+`frontend/.env.example` has one variable, `VITE_API_URL` - only needed when frontend and backend
+are deployed on different domains (see Deploying below). Local dev leaves it unset.
+
+## Deploying
+
+Frontend and backend deploy to **separate hosts** - Vercel doesn't support this backend's
+long-running process, persistent disk, or WebSocket needs, so the split is deliberate, not a
+workaround.
+
+### Backend -> Render
+
+1. Push this repo to GitHub, then in Render: **New +** -> **Blueprint**, and point it at the
+   repo. Render reads `backend/render.yaml` and provisions the web service + a free Postgres
+   database together.
+2. Once deployed, open the service's **Environment** tab and set `CORS_ORIGINS` to your Vercel
+   frontend's URL (e.g. `https://your-app.vercel.app`) - the blueprint deliberately leaves this
+   unset since the URL isn't known until the frontend is deployed.
+3. Grab the auto-generated `ADMIN_PASSWORD` from the same Environment tab - that's the real admin
+   login for this deployment, not the `.env.example` default.
+4. Note the backend's public URL (`https://<service-name>.onrender.com`) - the frontend needs it.
+
+**Free-tier caveats specific to this app** (real, not hypothetical - this stack is heavier than
+a typical Render free-tier app):
+- No persistent disk -> DeepFace's model weights re-download and the full startup warm-up
+  (detector + recognition + anti-spoofing) reruns on every cold start/restart, which can take
+  several minutes. The first request after any idle period will be slow.
+- 512MB RAM is tight running TensorFlow + PyTorch + DeepFace together - watch Render's logs for
+  out-of-memory restarts and upgrade the plan if they happen.
+- The free Postgres database **expires after 30 days** and needs to be recreated or upgraded.
+
+### Frontend -> Vercel
+
+1. In Vercel: **Add New** -> **Project**, import this repo, and set **Root Directory** to
+   `frontend` (this is a monorepo - Vercel needs to be told where the frontend actually lives).
+2. Vercel auto-detects the Vite build (`npm run build`, output `dist`) - no further build config
+   needed. `frontend/vercel.json` adds the SPA rewrite rule this app needs, since it uses
+   client-side routing (`react-router-dom`'s `BrowserRouter`) - without it, refreshing or
+   directly opening `/register`, `/login`, or `/admin` would 404 on Vercel's static hosting.
+3. In the project's **Environment Variables**, set `VITE_API_URL` to the Render backend's URL
+   from above (e.g. `https://nepa-attendance-backend.onrender.com`). This is a build-time
+   variable - redeploy after changing it.
+4. Deploy. HTTPS is automatic on Vercel, which is required for camera access outside `localhost`.
+
+### After both are live
+
+- Circle back to Render's `CORS_ORIGINS` with the real Vercel URL, if you hadn't yet.
+- Visit the kiosk (`/`), grant camera access, and confirm a scan round-trips to the backend. Then
+  sign in at `/login` with `ADMIN_USERNAME`/`ADMIN_PASSWORD` and confirm the live attendance feed
+  (`/attendance/ws`) connects on the admin pages.
+
 ## Known limitations
 
 - **Spoofing risk, reduced but not eliminated.** Every detected face is passed through DeepFace's

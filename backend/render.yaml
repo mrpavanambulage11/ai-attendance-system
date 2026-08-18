@@ -1,0 +1,44 @@
+# Render Blueprint - https://render.com/docs/blueprint-spec
+#
+# Deploy: push this repo, then in Render "New +" -> "Blueprint", point it at this repo. Render
+# reads this file and provisions the web service + database together.
+#
+# Known free-tier caveats for THIS app specifically (see README's Deploying section):
+#   - No persistent disk on the free plan, so DeepFace's model weights (~/.deepface/weights)
+#     re-download on every cold start/restart, and the app re-runs its full startup warm-up
+#     (detector + recognition + anti-spoofing models) each time - this can take several minutes.
+#   - 512MB RAM is tight running TensorFlow + PyTorch + DeepFace together; watch for OOM restarts
+#     in the Render logs and upgrade the plan if they happen.
+#   - The free Postgres database expires after 30 days and needs to be recreated/upgraded.
+services:
+  - type: web
+    name: nepa-attendance-backend
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: alembic upgrade head && python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nepa-attendance-db
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "480"
+      - key: FACE_MATCH_THRESHOLD
+        value: "0.6"
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false # set manually once the Vercel frontend URL is known, e.g. https://your-app.vercel.app
+
+databases:
+  - name: nepa-attendance-db
+    plan: free

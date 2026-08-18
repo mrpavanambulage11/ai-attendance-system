@@ -4,6 +4,19 @@ import type { AttendanceLiveEvent } from '@/types'
 
 export type LiveStatus = 'connecting' | 'connected' | 'disconnected'
 
+/** Same origin resolution as api.ts's VITE_API_URL - only ws(s):// instead of http(s):// -
+ * needed because frontend and backend can live on different domains (e.g. Vercel + Render). */
+function socketUrl(token: string): string {
+  const apiUrl = import.meta.env.VITE_API_URL
+  if (apiUrl) {
+    const backend = new URL(apiUrl)
+    const protocol = backend.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${protocol}//${backend.host}/attendance/ws?token=${encodeURIComponent(token)}`
+  }
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.host}/attendance/ws?token=${encodeURIComponent(token)}`
+}
+
 /** Live feed of check-ins/check-outs over /attendance/ws, with auto-reconnect (exponential
  * backoff, capped at 15s). Requires an admin token - the endpoint rejects anonymous connections. */
 export function useAttendanceSocket(onEvent: (event: AttendanceLiveEvent) => void): LiveStatus {
@@ -21,10 +34,7 @@ export function useAttendanceSocket(onEvent: (event: AttendanceLiveEvent) => voi
     let attempt = 0
 
     function connect() {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      socket = new WebSocket(
-        `${protocol}//${window.location.host}/attendance/ws?token=${encodeURIComponent(token as string)}`,
-      )
+      socket = new WebSocket(socketUrl(token as string))
 
       socket.onopen = () => {
         attempt = 0

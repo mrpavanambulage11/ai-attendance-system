@@ -2,7 +2,11 @@ import axios from 'axios'
 import { useAuthStore } from '@/lib/auth-store'
 import type { AttendanceRecord, Employee, EmployeeRegisterResult, MarkAttendanceResult } from '@/types'
 
-export const api = axios.create()
+// VITE_API_URL points at the deployed backend (e.g. Render) when frontend and backend are on
+// different origins, as with Vercel + Render. Left unset, this resolves to '', so requests stay
+// relative to the current origin - which is what makes Vite's local dev proxy (see
+// vite.config.ts) work unchanged.
+export const api = axios.create({ baseURL: import.meta.env.VITE_API_URL ?? '' })
 
 api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token
